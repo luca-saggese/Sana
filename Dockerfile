@@ -23,4 +23,6 @@ COPY tools tools
 COPY environment_setup.sh environment_setup.sh
 RUN ./environment_setup.sh
 
+ENV HF_HOME=/huggingface
+
 CMD ["python", "-u", "-W", "ignore", "app/app_sana.py", "--share", "--config=configs/sana_config/1024ms/Sana_1600M_img1024.yaml", "--model_path=hf://Efficient-Large-Model/Sana_1600M_1024px/checkpoints/Sana_1600M_1024px.pth"]
