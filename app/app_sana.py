@@ -120,6 +120,11 @@ style_list = [
         "negative_prompt": "color, modern clothing, logos, deformed, cartoon, anime, painting, unrealistic, glitch, "
         "digital artifacts, distortion, watermark",
     },
+    {
+        "name":"Mario Giacomelli",
+        "prompt":"high contrast black and white photo of {prompt} abstract lighting, strong silhouette, surreal empty space, other figures distant expressionist style, metaphysical mood, inspired by Mario Giacomelli",
+        "negative_prompt":"photorealism, colorful, digital painting, soft shadows, anime, cartoon, modern clothes, glitch, distorted, watermark "
+    }
 ]
 
 styles = {k["name"]: (k["prompt"], k["negative_prompt"]) for k in style_list}
@@ -330,15 +335,14 @@ def generate(
 model_size = "1.6" if "1600M" in args.model_path else "0.6"
 title = f"""
     <div style='display: flex; align-items: center; justify-content: center; text-align: center;'>
-        <img src="https://raw.githubusercontent.com/NVlabs/Sana/refs/heads/main/asset/logo.png" width="50%" alt="logo"/>
+        <img src="https://raw.githubusercontent.com/luca-saggese/Sana/refs/heads/main/asset/logo_goart.png" width="50%" alt="logo"/>
     </div>
 """
 DESCRIPTION = f"""
-        <p><span style="font-size: 36px; font-weight: bold;">Sana-{model_size}B</span><span style="font-size: 20px; font-weight: bold;">{args.image_size}px</span> <span style="font-size: 16px;"><a href="/ctrlnet">[ControlNet]</a></span> <span style="font-size: 16px;"><a href="/4bit">[4Bit]</a></span> <span style="font-size: 16px;"><a href="/sprint">[Sprint]</a></span></p>
+        <p><span style="font-size: 36px; font-weight: bold;">Sana-{model_size}B</span><span style="font-size: 20px; font-weight: bold;">{args.image_size}px</span> </p>
         <p style="font-size: 16px; font-weight: bold;"><a href="https://nvlabs.github.io/Sana">Sana: Efficient High-Resolution Image Synthesis with Linear Diffusion Transformer</a></p>
         <p style="font-size: 16px; font-weight: bold;">Powered by <a href="https://hanlab.mit.edu/projects/dc-ae">DC-AE</a>, <a href="https://github.com/mit-han-lab/deepcompressor">deepcompressor</a>, and <a href="https://github.com/mit-han-lab/nunchaku">nunchaku</a>.</p>
         <p style="font-size: 16px; font-weight: bold;">Prompts support English, Chinese and emojis.</p>
-        <p style="font-size: 16px; font-weight: bold;">Unsafe word will give you a 'Red Heart❤️' in the image instead.</p>
         """
 if model_size == "0.6":
     DESCRIPTION += "\n<p>0.6B model's text rendering ability is limited.</p>"
