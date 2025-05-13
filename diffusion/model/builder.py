@@ -66,8 +66,20 @@ def get_tokenizer_and_text_encoder(name="T5", device="cuda"):
     elif "gemma" in name or "Qwen" in name:
         tokenizer = AutoTokenizer.from_pretrained(text_encoder_dict[name])
         tokenizer.padding_side = "right"
+        # text_encoder = (
+        #     AutoModelForCausalLM.from_pretrained(text_encoder_dict[name], torch_dtype=torch.bfloat16)
+        #     .get_decoder()
+        #     .to(device)
+        # )
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16
+        )
+
         text_encoder = (
-            AutoModelForCausalLM.from_pretrained(text_encoder_dict[name], torch_dtype=torch.bfloat16)
+            AutoModelForCausalLM.from_pretrained(text_encoder_dict[name], torch_dtype=torch.bfloat16, quantization_config=quant_config)
             .get_decoder()
             .to(device)
         )
