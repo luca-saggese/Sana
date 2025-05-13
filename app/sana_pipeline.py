@@ -177,6 +177,8 @@ class SanaPipeline(nn.Module):
         num_images_per_prompt=1,
         generator=torch.Generator().manual_seed(42),
         latents=None,
+        reference_image: Optional[torch.Tensor] = None,  # 👈 Aggiunto
+        image_guidance_scale: float = 1.0,               # 👈 Aggiunto
         use_resolution_binning=True,
     ):
         self.ori_height, self.ori_width = height, width
@@ -249,18 +251,32 @@ class SanaPipeline(nn.Module):
                 null_y = self.null_caption_embs.repeat(len(prompts), 1, 1)[:, None].to(self.weight_dtype)
 
                 n = len(prompts)
+
+                # ----------- 👇 NUOVO BLOCCO: uso immagine come guida latente ------------
                 if latents is None:
-                    z = torch.randn(
-                        n,
-                        self.config.vae.vae_latent_dim,
-                        self.latent_size_h,
-                        self.latent_size_w,
-                        generator=generator,
-                        device=self.device,
-                        # dtype=self.weight_dtype,
-                    )
+                    if reference_image is not None:
+                        if reference_image.dim() == 3:
+                            reference_image = reference_image.unsqueeze(0)
+                        reference_image = reference_image.to(self.device).to(self.vae_dtype)
+                        ref_latents = self.vae.encode(reference_image).latent_dist.sample()
+                        ref_latents = ref_latents * self.config.vae.scale_factor
+                        noise = torch.randn_like(ref_latents, generator=generator)
+                        alpha = image_guidance_scale  # tra 0 e 1
+                        z = alpha * ref_latents + (1 - alpha) * noise
+                    else:
+                        z = torch.randn(
+                            n,
+                            self.config.vae.vae_latent_dim,
+                            self.latent_size_h,
+                            self.latent_size_w,
+                            generator=generator,
+                            device=self.device,
+                            # dtype=self.weight_dtype,
+                        )
                 else:
                     z = latents.to(self.device)
+                # ------------------------------------------------------------------------
+
                 model_kwargs = dict(data_info={"img_hw": hw, "aspect_ratio": ar}, mask=emb_masks)
                 if self.vis_sampler == "flow_euler":
                     flow_solver = FlowEuler(
@@ -308,3 +324,4 @@ class SanaPipeline(nn.Module):
             return sample
 
         return samples
+

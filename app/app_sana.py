@@ -273,11 +273,22 @@ def generate(
     flow_dpms_pag_guidance_scale: float = 2.0,
     flow_dpms_inference_steps: int = 20,
     randomize_seed: bool = False,
+    reference_image: Image.Image = None,  # 👈 Aggiunto
+    image_guidance_scale: float = 1.0,    # 👈 Aggiunto
 ):
     write_inference_count(num_imgs)
     global INFER_SPEED
     # seed = 823753551
     seed = int(randomize_seed_fn(seed, randomize_seed))
+    reference_tensor = None
+    if reference_image is not None:
+        from torchvision import transforms
+        transform = transforms.Compose([
+            transforms.Resize((height, width)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.5]*3, [0.5]*3)  # da [0,1] a [-1,1]
+        ])
+        reference_tensor = transform(reference_image).unsqueeze(0).to(device)
     generator = torch.Generator(device=device).manual_seed(seed)
     print(f"PORT: {DEMO_PORT}, model_path: {model_path}")
 
@@ -305,6 +316,8 @@ def generate(
         num_inference_steps=num_inference_steps,
         num_images_per_prompt=num_imgs,
         generator=generator,
+        reference_image=reference_tensor,               # 👈 aggiunto
+        image_guidance_scale=image_guidance_scale,     # 👈 aggiunto
     )
 
     pipe.progress_fn(1.0, desc="Sana End")
@@ -451,6 +464,21 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
                 value=0,
             )
             randomize_seed = gr.Checkbox(label="Randomize seed", value=True)
+            with gr.Row():
+                reference_image = gr.Image(
+                    label="Reference image (optional)",
+                    type="pil",
+                    tool="editor",
+                    image_mode="RGB",
+                    sources=["upload"],
+                )
+                image_guidance_scale = gr.Slider(
+                    label="Image guidance strength",
+                    minimum=0.0,
+                    maximum=1.0,
+                    value=0.5,
+                    step=0.05,
+                )
             with gr.Row(visible=True):
                 schedule = gr.Radio(
                     show_label=True,
@@ -513,6 +541,8 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
             flow_dpms_pag_guidance_scale,
             flow_dpms_inference_steps,
             randomize_seed,
+            reference_image,          # 👈 aggiunto
+            image_guidance_scale,     # 👈 aggiunto
         ],
         outputs=[result, seed],
         api_name="run",
