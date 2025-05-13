@@ -18,8 +18,14 @@ import os
 import os.path as osp
 import sys
 
-from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub import hf_hub_download, snapshot_download, configure_http_backend
 
+import requests
+
+def backend_factory() -> requests.Session:
+    session = requests.Session()
+    session.verify = False
+    return session
 
 def hf_download_or_fpath(path):
     if osp.exists(path):
@@ -51,6 +57,7 @@ def hf_download_data(
     str: The path to the downloaded file.
     """
     try:
+        configure_http_backend(backend_factory=backend_factory)
         if download_full_repo:
             # download full repos to fit dc-ae
             snapshot_download(
