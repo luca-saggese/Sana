@@ -25,7 +25,8 @@ RUN ./environment_setup.sh
 
 RUN pip install huggingface_hub[hf_xet]
 ENV HF_HOME=/huggingface
-#ENV CURL_CA_BUNDLE=""
+
+ENV CURL_CA_BUNDLE=""
 
 #CMD ["python", "-u", "-W", "ignore", "app/app_sana.py", "--share", "--config=configs/sana_config/512ms/Sana_1600M_img512.yaml", "--model_path=hf://Efficient-Large-Model/Sana_1600M_512px/checkpoints/Sana_1600M_512px_MultiLing.pth"]
 #python -u -W ignore app/app_sana.py --share --config=configs/sana_config/512ms/Sana_1600M_img512.yaml --model_path=hf://Efficient-Large-Model/Sana_1600M_512px/checkpoints/Sana_1600M_512px_MultiLing.pth
