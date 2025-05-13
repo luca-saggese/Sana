@@ -105,6 +105,17 @@ style_list = [
         "prompt": "professional 3d model {prompt} . octane render, highly detailed, volumetric, dramatic lighting",
         "negative_prompt": "ugly, deformed, noisy, low poly, blurry, painting",
     },
+     {
+        "name": "URSS Brutalism",
+        "prompt": "futuristic brutalist soviet architecture, {prompt}, dystopian, cold atmosphere, monumental structure, concrete, retrofuturistic design, misty, overcast, high detail, cinematic lighting, ultra wide shot, realistic textures",
+        "negative_prompt": "people, humans, text, logos, deformed, cartoon, painting, sketch, drawing, oversaturated, low quality, blurry, noisy, watermark, extra limbs, ugly, distortedg",
+    },
+
+     {
+        "name": "Robert Doisenau",
+        "prompt": "realistic romantic black and white street photo of {prompt} in 1950s Paris, candid moment, vintage clothing,  Parisian street background, atmospheric, Leica camera style, film grain, soft focus, poetic mood, timeless elegance",
+        "negative_prompt": "color, modern clothing, logos, deformed, cartoon, anime, painting, unrealistic, glitch, digital artifacts, distortion, watermark",
+    },
 ]
 
 styles = {k["name"]: (k["prompt"], k["negative_prompt"]) for k in style_list}
