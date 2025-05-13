@@ -179,6 +179,7 @@ class SanaPipeline(nn.Module):
         latents=None,
         reference_image: Optional[torch.Tensor] = None,  # 👈 Aggiunto
         image_guidance_scale: float = 1.0,               # 👈 Aggiunto
+        inpaint_mask: Optional[torch.Tensor] = None,
         use_resolution_binning=True,
     ):
         self.ori_height, self.ori_width = height, width
@@ -260,9 +261,18 @@ class SanaPipeline(nn.Module):
                         reference_image = reference_image.to(self.device).to(self.vae_dtype)
                         ref_latents = self.vae.encode(reference_image).latent_dist.sample()
                         ref_latents = ref_latents * self.config.vae.scale_factor
+
                         noise = torch.randn_like(ref_latents, generator=generator)
-                        alpha = image_guidance_scale  # tra 0 e 1
-                        z = alpha * ref_latents + (1 - alpha) * noise
+                        if inpaint_mask is not None:
+                            inpaint_mask = inpaint_mask.to(self.device).to(z_ref.dtype)
+                            inpaint_mask = torch.nn.functional.interpolate(
+                                inpaint_mask, size=ref_latents.shape[-2:], mode="nearest"
+                            )
+                            z = noise * inpaint_mask + ref_latents * (1 - inpaint_mask)
+                        else:
+                            z = image_guidance_scale * ref_latents + (1 - image_guidance_scale) * noise
+                        # alpha = image_guidance_scale  # tra 0 e 1
+                        # z = alpha * ref_latents + (1 - alpha) * noise
                     else:
                         z = torch.randn(
                             n,

@@ -275,6 +275,7 @@ def generate(
     randomize_seed: bool = False,
     reference_image: Image.Image = None,  # 👈 Aggiunto
     image_guidance_scale: float = 1.0,    # 👈 Aggiunto
+    inpaint_mask: Image.Image = None,
 ):
     write_inference_count(num_imgs)
     global INFER_SPEED
@@ -289,6 +290,15 @@ def generate(
             transforms.Normalize([0.5]*3, [0.5]*3)  # da [0,1] a [-1,1]
         ])
         reference_tensor = transform(reference_image).unsqueeze(0).to(device)
+    mask_tensor = None
+    if inpaint_mask is not None:
+        transform_mask = transforms.Compose([
+            transforms.Resize((height, width)),
+            transforms.ToTensor(),  # grayscale → (1,H,W)
+        ])
+        mask_tensor = transform_mask(inpaint_mask).unsqueeze(0).to(device)
+        # Binarizza la maschera: 1 = da rigenerare
+        mask_tensor = (mask_tensor > 0.5).float()
     generator = torch.Generator(device=device).manual_seed(seed)
     print(f"PORT: {DEMO_PORT}, model_path: {model_path}")
 
@@ -318,6 +328,7 @@ def generate(
         generator=generator,
         reference_image=reference_tensor,               # 👈 aggiunto
         image_guidance_scale=image_guidance_scale,     # 👈 aggiunto
+        inpaint_mask=mask_tensor,                      # 👈 aggiunto
     )
 
     pipe.progress_fn(1.0, desc="Sana End")
@@ -471,6 +482,13 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
                     tool="editor",
                     image_mode="RGB",
                     sources=["upload"],
+                )
+                inpaint_mask = gr.Image(
+                    label="Inpaint mask (draw in white)",
+                    type="pil",
+                    tool="sketch",  # modalità disegno
+                    image_mode="L",
+                    sources=["upload", "canvas"],
                 )
                 image_guidance_scale = gr.Slider(
                     label="Image guidance strength",
