@@ -43,7 +43,7 @@ vae:
   sample_posterior: true
 # text encoder
 text_encoder:
-  text_encoder_name: gemma-2-2b-it
+  text_encoder_name: T5-small
   y_norm: true
   y_norm_scale_factor: 0.01
   model_max_length: 300

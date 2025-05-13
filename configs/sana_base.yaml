@@ -50,7 +50,7 @@ model:
   pag_applied_layers: [14]
 # text encoder settings
 text_encoder:
-  text_encoder_name: gemma-2-2b-it
+  text_encoder_name: T5-small
   caption_channels: 2304
   y_norm: false
   y_norm_scale_factor: 1.0

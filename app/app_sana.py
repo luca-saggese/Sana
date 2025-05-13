@@ -199,17 +199,16 @@ args = get_args()
 
 if torch.cuda.is_available():
     model_path = args.model_path
+    print(f"Loading model from {model_path}")
     pipe = SanaPipeline(args.config)
+    print(f"Loading model from {model_path}")
     pipe.from_pretrained(model_path)
+    print(f"Model loaded from {model_path}")
     pipe.register_progress_bar(gr.Progress())
+    
+    
 
-    # safety checker
-    safety_checker_tokenizer = AutoTokenizer.from_pretrained(args.shield_model_path)
-    safety_checker_model = AutoModelForCausalLM.from_pretrained(
-        args.shield_model_path,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-    ).to(device)
+
 
 
 def save_image_sana(img, seed="", save_img=False):
@@ -261,8 +260,7 @@ def generate(
     seed = int(randomize_seed_fn(seed, randomize_seed))
     generator = torch.Generator(device=device).manual_seed(seed)
     print(f"PORT: {DEMO_PORT}, model_path: {model_path}")
-    if safety_check.is_dangerous(safety_checker_tokenizer, safety_checker_model, prompt, threshold=0.2):
-        prompt = "A red heart."
+
 
     print(prompt)
 
