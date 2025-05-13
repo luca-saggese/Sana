@@ -561,6 +561,7 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
             randomize_seed,
             reference_image,          # 👈 aggiunto
             image_guidance_scale,     # 👈 aggiunto
+            inpaint_mask,           # 👈 aggiunto
         ],
         outputs=[result, seed],
         api_name="run",
