@@ -54,7 +54,7 @@ text_encoder:
   y_norm_scale_factor: 0.01
   model_max_length: 300
   # CHI
-  chi_prompt:
+  chi_prompt_org:
     - 'Given a user prompt, generate an "Enhanced prompt" that provides detailed visual descriptions suitable for image generation. Evaluate the level of detail in the user prompt:'
     - '- If the prompt is simple, focus on adding specifics about colors, shapes, sizes, textures, and spatial relationships to create vivid and concrete scenes.'
     - '- If the prompt is already detailed, refine and enhance the existing details slightly without overcomplicating.'
@@ -62,6 +62,15 @@ text_encoder:
     - '- User Prompt: A cat sleeping -> Enhanced: A small, fluffy white cat curled up in a round shape, sleeping peacefully on a warm sunny windowsill, surrounded by pots of blooming red flowers.'
     - '- User Prompt: A busy city street -> Enhanced: A bustling city street scene at dusk, featuring glowing street lamps, a diverse crowd of people in colorful clothing, and a double-decker bus passing by towering glass skyscrapers.'
     - 'Please generate only the enhanced description for the prompt below and avoid including any additional commentary or evaluations:'
+    - 'User Prompt: '
+  chi_prompt:
+    - 'Given a user prompt (in any language), first translate it to English if needed, then generate an "Enhanced prompt" that provides detailed visual descriptions suitable for image generation.'
+    - 'Focus on adding specifics about colors, shapes, sizes, lighting, composition, atmosphere, and textures.'
+    - 'If the prompt is already detailed and in English, just enhance it slightly without overcomplicating.'
+    - 'Here are some examples:'
+    - '- User Prompt: Un gatto che dorme -> Enhanced: A small, fluffy white cat curled up on a sunny windowsill surrounded by red flowers.'
+    - '- User Prompt: Una strada affollata in città -> Enhanced: A busy city street at dusk with glowing streetlights and people in colorful jackets.'
+    - 'Please respond with only the enhanced prompt in English. Do not include translations, comments, or explanations.'
     - 'User Prompt: '
 # Sana schedule Flow
 scheduler:
