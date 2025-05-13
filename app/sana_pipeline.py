@@ -115,7 +115,7 @@ class SanaPipeline(nn.Module):
         self.tokenizer, self.text_encoder = self.build_text_encoder(config.text_encoder)
 
         # 2. build Sana model
-        self.model = self.build_sana_model(config).to(self.device)
+        #self.model = self.build_sana_model(config).to(self.device)
 
         # 3. pre-compute null embedding
         with torch.no_grad():
