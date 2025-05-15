@@ -32,7 +32,7 @@ from diffusion.data.datasets.utils import (
     ASPECT_RATIO_2048_TEST,
     ASPECT_RATIO_4096_TEST,
 )
-from diffusion.model.builder import build_model, get_tokenizer_and_text_encoder, get_vae, vae_decode
+from diffusion.model.builder import build_model, get_tokenizer_and_text_encoder, get_vae, vae_decode, vae_encode
 from diffusion.model.utils import get_weight_dtype, prepare_prompt_ar, resize_and_crop_tensor
 from diffusion.utils.config import SanaConfig, model_init_config
 from diffusion.utils.logger import get_root_logger
@@ -259,12 +259,20 @@ class SanaPipeline(nn.Module):
                         if reference_image.dim() == 3:
                             reference_image = reference_image.unsqueeze(0)
                         reference_image = reference_image.to(self.device).to(self.vae_dtype)
-                        ref_latents = self.vae.encode(reference_image).latent_dist.sample()
+                        ref_latents = vae_encode(
+                            self.config.vae.vae_type, self.vae, reference_image, True, self.device
+                        )
                         ref_latents = ref_latents * self.config.vae.scale_factor
 
-                        noise = torch.randn_like(ref_latents, generator=generator)
+                        #noise = torch.randn_like(ref_latents, generator=generator)
+                        noise = torch.randn(
+                            ref_latents.shape,
+                            device     = ref_latents.device,
+                            dtype      = ref_latents.dtype,
+                            generator  = generator          # OK perché torch.randn accetta generator
+                        )
                         if inpaint_mask is not None:
-                            inpaint_mask = inpaint_mask.to(self.device).to(z_ref.dtype)
+                            inpaint_mask = inpaint_mask.to(self.device).to(ref_latents.dtype)
                             inpaint_mask = torch.nn.functional.interpolate(
                                 inpaint_mask, size=ref_latents.shape[-2:], mode="nearest"
                             )
