@@ -479,16 +479,17 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
                 reference_image = gr.Image(
                     label="Reference image (optional)",
                     type="pil",
-                    tool="editor",
+                    #tool="editor",
                     image_mode="RGB",
                     sources=["upload"],
                 )
                 inpaint_mask = gr.Image(
                     label="Inpaint mask (draw in white)",
                     type="pil",
-                    tool="sketch",  # modalità disegno
+                    #tool="sketch",  # modalità disegno
                     image_mode="L",
-                    sources=["upload", "canvas"],
+                    #sources=["upload", "canvas"],
+                    sources=["upload"],
                 )
                 image_guidance_scale = gr.Slider(
                     label="Image guidance strength",
