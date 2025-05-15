@@ -202,9 +202,18 @@ class SanaPipeline(nn.Module):
                 truncation=True,
                 return_tensors="pt",
             ).to(self.device)
-            self.null_caption_embs = self.text_encoder(null_caption_token.input_ids, null_caption_token.attention_mask)[
-                0
-            ]
+            
+            self.text_encoder.to(self.device)
+            with torch.no_grad():
+                self.null_caption_embs = self.text_encoder(
+                    null_caption_token.input_ids,
+                    null_caption_token.attention_mask
+                )[0]
+            self.text_encoder.to("cpu")
+            torch.cuda.empty_cache()
+            # self.null_caption_embs = self.text_encoder(null_caption_token.input_ids, null_caption_token.attention_mask)[
+            #     0
+            # ]
 
         if prompt is None:
             prompt = [""]
@@ -245,9 +254,20 @@ class SanaPipeline(nn.Module):
                     return_tensors="pt",
                 ).to(device=self.device)
                 select_index = [0] + list(range(-self.config.text_encoder.model_max_length + 1, 0))
-                caption_embs = self.text_encoder(caption_token.input_ids, caption_token.attention_mask)[0][:, None][
-                    :, :, select_index
-                ].to(self.weight_dtype)
+                # caption_embs = self.text_encoder(caption_token.input_ids, caption_token.attention_mask)[0][:, None][
+                #     :, :, select_index
+                # ].to(self.weight_dtype)
+                self.text_encoder.to(self.device)
+                with torch.no_grad():
+                    raw_embs = self.text_encoder(
+                        caption_token.input_ids,
+                        caption_token.attention_mask
+                    )[0]
+                self.text_encoder.to("cpu")
+                torch.cuda.empty_cache()
+
+                caption_embs = raw_embs[:, None][:, :, select_index].to(self.weight_dtype)
+                
                 emb_masks = caption_token.attention_mask[:, select_index]
                 null_y = self.null_caption_embs.repeat(len(prompts), 1, 1)[:, None].to(self.weight_dtype)
 
@@ -337,9 +357,11 @@ class SanaPipeline(nn.Module):
 
             if use_resolution_binning:
                 sample = resize_and_crop_tensor(sample, self.ori_width, self.ori_height)
-            samples.append(sample)
+            samples.append(sample.detach().cpu())
 
             return sample
 
+        del z, caption_embs, null_y, sample, caption_token, emb_masks
+        torch.cuda.empty_cache()
         return samples
 

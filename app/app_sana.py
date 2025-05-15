@@ -32,6 +32,8 @@ import torch
 from PIL import Image
 from torchvision.utils import make_grid, save_image
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import tempfile, uuid, os
+from pathlib import Path
 
 from app import safety_check
 from app.sana_pipeline import SanaPipeline
@@ -334,9 +336,14 @@ def generate(
     pipe.progress_fn(1.0, desc="Sana End")
     INFER_SPEED = (time.time() - time_start) / num_imgs
 
-    img = [
-        Image.fromarray(
-            norm_ip(img, -1, 1)
+    # --- NUOVO BLOCCO: salva su disco ---
+    saved_paths = []
+    tmpdir = Path(tempfile.gettempdir()) / "gradio_imgs"
+    tmpdir.mkdir(parents=True, exist_ok=True)
+
+    for idx, img_t in enumerate(images):
+        pil_img = Image.fromarray(
+            norm_ip(img_t, -1, 1)
             .mul(255)
             .add_(0.5)
             .clamp_(0, 255)
@@ -345,13 +352,19 @@ def generate(
             .numpy()
             .astype(np.uint8)
         )
-        for img in images
-    ]
+
+        # Nome: prompt “safe” + seed + indice
+        filename = f"{uuid.uuid4().hex[:8]}_{seed}_{idx}.png"
+        filepath = tmpdir / filename
+        pil_img.save(filepath, format="PNG")
+
+        # Salva tuple (path, caption) per la Gallery
+        saved_paths.append((str(filepath), filename))
 
     torch.cuda.empty_cache()
 
     return (
-        img,
+        saved_paths,
         seed,
     )
 
