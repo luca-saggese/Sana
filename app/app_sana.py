@@ -32,9 +32,15 @@ import torch
 from PIL import Image
 from torchvision.utils import make_grid, save_image
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import tempfile, uuid, os
+from pathlib import Path
 
 from app import safety_check
 from app.sana_pipeline import SanaPipeline
+
+import json
+
+
 
 MAX_SEED = np.iinfo(np.int32).max
 CACHE_EXAMPLES = torch.cuda.is_available() and os.getenv("CACHE_EXAMPLES", "1") == "1"
@@ -45,6 +51,53 @@ DEMO_PORT = int(os.getenv("DEMO_PORT", "15432"))
 os.environ["GRADIO_EXAMPLES_CACHE"] = "./.gradio/cache"
 COUNTER_DB = os.getenv("COUNTER_DB", ".count.db")
 ROOT_PATH = os.getenv("ROOT_PATH", None)
+HISTORY_FILE = "/app/output/generation_history.json"
+HISTORY_LIMIT = 5000  # massimo numero di immagini da mantenere
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+generation_history = load_history()
+
+def save_history(history):
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history, f, indent=2)
+         # Funzione per aggiornare la galleria
+         
+def get_history_gallery():
+    return [(item["img_path"], f"{item['prompt']}") for item in generation_history[-HISTORY_LIMIT:]]
+
+# Quando cambia l’indice selezionato, ripopola i parametri
+def repopulate_fields(index: int):
+    if 0 <= index < len(generation_history):
+        item = generation_history[index]
+        return (
+            item["prompt"],
+            item["negative_prompt"],
+            item["style"],
+            item["seed"],
+            item["height"],
+            item["width"],
+        )
+    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+
+def delete_history_item(index: int):
+    if 0 <= index < len(generation_history):
+        img_path = generation_history[index]["img_path"]
+        # Rimuovi il file immagine
+        if os.path.exists(img_path):
+            os.remove(img_path)
+        # Rimuovi dalla lista
+        del generation_history[index]
+        save_history(generation_history)
+    return get_history_gallery(), -1  # aggiorna galleria e resetta selezione
+
+
+
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -334,9 +387,14 @@ def generate(
     pipe.progress_fn(1.0, desc="Sana End")
     INFER_SPEED = (time.time() - time_start) / num_imgs
 
-    img = [
-        Image.fromarray(
-            norm_ip(img, -1, 1)
+    # --- NUOVO BLOCCO: salva su disco ---
+    saved_paths = []
+    tmpdir = Path("/app/output")
+    tmpdir.mkdir(parents=True, exist_ok=True)
+
+    for idx, img_t in enumerate(images):
+        pil_img = Image.fromarray(
+            norm_ip(img_t, -1, 1)
             .mul(255)
             .add_(0.5)
             .clamp_(0, 255)
@@ -345,13 +403,35 @@ def generate(
             .numpy()
             .astype(np.uint8)
         )
-        for img in images
-    ]
+
+        # Nome: prompt “safe” + seed + indice
+        filename = f"{uuid.uuid4().hex[:8]}_{seed}_{idx}.png"
+        filepath = tmpdir / filename
+        pil_img.save(filepath, format="PNG")
+
+        # Salva tuple (path, caption) per la Gallery
+        saved_paths.append((str(filepath), filename))
 
     torch.cuda.empty_cache()
 
+    # Salva ogni immagine nella cronologia
+    for i, (img_path, caption) in enumerate(saved_paths):
+        generation_history.append({
+            "img_path": img_path,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt or "",
+            "style": style,
+            "seed": seed,
+            "height": height,
+            "width": width,
+        })
+
+    # Limita la dimensione della cronologia
+    generation_history[:] = generation_history[-HISTORY_LIMIT:]
+    save_history(generation_history)
+
     return (
-        img,
+        saved_paths,
         seed,
     )
 
@@ -412,6 +492,10 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
             submit_btn="Run",
         )
         result = gr.Gallery(label="Result", show_label=False, format="webp", height=600)
+        history_gallery = gr.Gallery(label="History", show_label=True, height=300)
+        selected_index = gr.Number(visible=False)
+        rerun_button = gr.Button("Rilancia selezione", variant="primary")
+        delete_button = gr.Button("Delete selected image", variant="stop")
     with gr.Accordion("Advanced options", open=False):
         with gr.Group():
             with gr.Row(visible=True):
@@ -479,16 +563,17 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
                 reference_image = gr.Image(
                     label="Reference image (optional)",
                     type="pil",
-                    tool="editor",
+                    #tool="editor",
                     image_mode="RGB",
                     sources=["upload"],
                 )
                 inpaint_mask = gr.Image(
                     label="Inpaint mask (draw in white)",
                     type="pil",
-                    tool="sketch",  # modalità disegno
+                    #tool="sketch",  # modalità disegno
                     image_mode="L",
-                    sources=["upload", "canvas"],
+                    #sources=["upload", "canvas"],
+                    sources=["upload"],
                 )
                 image_guidance_scale = gr.Slider(
                     label="Image guidance strength",
@@ -572,12 +657,63 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         show_progress="full",
         api_name=False,
         queue=False,
+    ).then(
+        fn=get_history_gallery,
+        inputs=None,
+        outputs=history_gallery,
+        show_progress="hidden"
     )
     gr.HTML(
         value="<p style='text-align: center; font-size: 14px;'>Useful link: <a href='https://accessibility.mit.edu'>MIT Accessibility</a></p>"
     )
 
+    # Quando clicchi un'immagine, restituisce l'indice
+    history_gallery.select(
+        fn=lambda i: i,
+        inputs=None,
+        outputs=selected_index
+    )
+    
+    rerun_button.click(
+        fn=generate,
+        inputs=[
+            prompt,
+            negative_prompt,
+            style_selection,
+            use_negative_prompt,
+            num_imgs,
+            seed,
+            height,
+            width,
+            flow_dpms_guidance_scale,
+            flow_dpms_pag_guidance_scale,
+            flow_dpms_inference_steps,
+            randomize_seed,
+            reference_image,
+            image_guidance_scale,
+            inpaint_mask,
+        ],
+        outputs=[result, seed],
+    ).then(
+        fn=get_history_gallery,
+        inputs=None,
+        outputs=history_gallery
+    )
+
+    selected_index.change(
+        fn=repopulate_fields,
+        inputs=selected_index,
+        outputs=[prompt, negative_prompt, style_selection, seed, height, width]
+    )
+    
+    delete_button.click(
+        fn=delete_history_item,
+        inputs=selected_index,
+        outputs=[history_gallery, selected_index],
+    )
+
 if __name__ == "__main__":
+    demo.load(fn=get_history_gallery, inputs=None, outputs=history_gallery)
     demo.queue(max_size=20).launch(
         server_name="0.0.0.0", server_port=DEMO_PORT, debug=False, share=args.share, root_path=ROOT_PATH
     )

@@ -32,7 +32,7 @@ from diffusion.data.datasets.utils import (
     ASPECT_RATIO_2048_TEST,
     ASPECT_RATIO_4096_TEST,
 )
-from diffusion.model.builder import build_model, get_tokenizer_and_text_encoder, get_vae, vae_decode
+from diffusion.model.builder import build_model, get_tokenizer_and_text_encoder, get_vae, vae_decode, vae_encode
 from diffusion.model.utils import get_weight_dtype, prepare_prompt_ar, resize_and_crop_tensor
 from diffusion.utils.config import SanaConfig, model_init_config
 from diffusion.utils.logger import get_root_logger
@@ -202,9 +202,18 @@ class SanaPipeline(nn.Module):
                 truncation=True,
                 return_tensors="pt",
             ).to(self.device)
-            self.null_caption_embs = self.text_encoder(null_caption_token.input_ids, null_caption_token.attention_mask)[
-                0
-            ]
+            
+            self.text_encoder.to(self.device)
+            with torch.no_grad():
+                self.null_caption_embs = self.text_encoder(
+                    null_caption_token.input_ids,
+                    null_caption_token.attention_mask
+                )[0]
+            self.text_encoder.to("cpu")
+            torch.cuda.empty_cache()
+            # self.null_caption_embs = self.text_encoder(null_caption_token.input_ids, null_caption_token.attention_mask)[
+            #     0
+            # ]
 
         if prompt is None:
             prompt = [""]
@@ -245,9 +254,20 @@ class SanaPipeline(nn.Module):
                     return_tensors="pt",
                 ).to(device=self.device)
                 select_index = [0] + list(range(-self.config.text_encoder.model_max_length + 1, 0))
-                caption_embs = self.text_encoder(caption_token.input_ids, caption_token.attention_mask)[0][:, None][
-                    :, :, select_index
-                ].to(self.weight_dtype)
+                # caption_embs = self.text_encoder(caption_token.input_ids, caption_token.attention_mask)[0][:, None][
+                #     :, :, select_index
+                # ].to(self.weight_dtype)
+                self.text_encoder.to(self.device)
+                with torch.no_grad():
+                    raw_embs = self.text_encoder(
+                        caption_token.input_ids,
+                        caption_token.attention_mask
+                    )[0]
+                self.text_encoder.to("cpu")
+                torch.cuda.empty_cache()
+
+                caption_embs = raw_embs[:, None][:, :, select_index].to(self.weight_dtype)
+                
                 emb_masks = caption_token.attention_mask[:, select_index]
                 null_y = self.null_caption_embs.repeat(len(prompts), 1, 1)[:, None].to(self.weight_dtype)
 
@@ -259,12 +279,20 @@ class SanaPipeline(nn.Module):
                         if reference_image.dim() == 3:
                             reference_image = reference_image.unsqueeze(0)
                         reference_image = reference_image.to(self.device).to(self.vae_dtype)
-                        ref_latents = self.vae.encode(reference_image).latent_dist.sample()
+                        ref_latents = vae_encode(
+                            self.config.vae.vae_type, self.vae, reference_image, True, self.device
+                        )
                         ref_latents = ref_latents * self.config.vae.scale_factor
 
-                        noise = torch.randn_like(ref_latents, generator=generator)
+                        #noise = torch.randn_like(ref_latents, generator=generator)
+                        noise = torch.randn(
+                            ref_latents.shape,
+                            device     = ref_latents.device,
+                            dtype      = ref_latents.dtype,
+                            generator  = generator          # OK perché torch.randn accetta generator
+                        )
                         if inpaint_mask is not None:
-                            inpaint_mask = inpaint_mask.to(self.device).to(z_ref.dtype)
+                            inpaint_mask = inpaint_mask.to(self.device).to(ref_latents.dtype)
                             inpaint_mask = torch.nn.functional.interpolate(
                                 inpaint_mask, size=ref_latents.shape[-2:], mode="nearest"
                             )
@@ -329,9 +357,11 @@ class SanaPipeline(nn.Module):
 
             if use_resolution_binning:
                 sample = resize_and_crop_tensor(sample, self.ori_width, self.ori_height)
-            samples.append(sample)
+            samples.append(sample.detach().cpu())
 
             return sample
 
+        del z, caption_embs, null_y, sample, caption_token, emb_masks
+        torch.cuda.empty_cache()
         return samples
 

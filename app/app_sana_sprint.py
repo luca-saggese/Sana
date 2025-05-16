@@ -37,7 +37,7 @@ from app import safety_check
 from app.sana_sprint_pipeline import SanaSprintPipeline
 
 MAX_SEED = np.iinfo(np.int32).max
-CACHE_EXAMPLES = torch.cuda.is_available() and os.getenv("CACHE_EXAMPLES", "1") == "1"
+CACHE_EXAMPLES = False
 MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", "4096"))
 USE_TORCH_COMPILE = os.getenv("USE_TORCH_COMPILE", "0") == "1"
 ENABLE_CPU_OFFLOAD = os.getenv("ENABLE_CPU_OFFLOAD", "0") == "1"
@@ -93,6 +93,21 @@ style_list = [
         "name": "3D Model",
         "prompt": "professional 3d model {prompt} . octane render, highly detailed, volumetric, dramatic lighting",
     },
+    {
+        "name": "URSS Brutalism",
+        "prompt": "futuristic brutalist soviet architecture, {prompt}, dystopian, cold atmosphere, monumental structure, "
+        "concrete, retrofuturistic design, misty, overcast, high detail, cinematic lighting, ultra wide shot, realistic textures",
+    },
+
+     {
+        "name": "Robert Doisenau",
+        "prompt": "realistic romantic black and white street photo of {prompt} in 1950s Paris, candid moment, vintage "
+        "clothing,  Parisian street background, atmospheric, Leica camera style, film grain, soft focus, poetic mood, timeless elegance",
+    },
+    {
+        "name":"Mario Giacomelli",
+        "prompt":"high contrast black and white photo of {prompt} abstract lighting, strong silhouette, surreal empty space, other figures distant expressionist style, metaphysical mood, inspired by Mario Giacomelli",
+    }
 ]
 
 styles = {k["name"]: (k["prompt"]) for k in style_list}
@@ -166,12 +181,7 @@ def get_args():
     )
     parser.add_argument("--image_size", default=1024, type=int)
     parser.add_argument("--share", action="store_true")
-    parser.add_argument(
-        "--shield_model_path",
-        type=str,
-        help="The path to shield model, we employ ShieldGemma-2B by default.",
-        default="google/shieldgemma-2b",
-    )
+
 
     return parser.parse_known_args()[0]
 
@@ -184,13 +194,6 @@ if torch.cuda.is_available():
     pipe.from_pretrained(model_path)
     pipe.register_progress_bar(gr.Progress())
 
-    # safety checker
-    safety_checker_tokenizer = AutoTokenizer.from_pretrained(args.shield_model_path)
-    safety_checker_model = AutoModelForCausalLM.from_pretrained(
-        args.shield_model_path,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-    ).to(device)
 
 
 def save_image_sana(img, seed="", save_img=False):
@@ -234,8 +237,7 @@ def generate(
     seed = int(randomize_seed_fn(seed, randomize_seed))
     generator = torch.Generator(device=device).manual_seed(seed)
     print(f"PORT: {DEMO_PORT}, model_path: {model_path}")
-    if safety_check.is_dangerous(safety_checker_tokenizer, safety_checker_model, prompt, threshold=0.2):
-        prompt = "A red heart."
+
 
     print(prompt)
 
