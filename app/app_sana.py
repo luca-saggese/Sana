@@ -60,6 +60,8 @@ def load_history():
             return json.load(f)
     return []
 
+generation_history = load_history()
+
 def save_history(history):
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=2)
@@ -82,8 +84,18 @@ def repopulate_fields(index: int):
         )
     return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
+def delete_history_item(index: int):
+    if 0 <= index < len(generation_history):
+        img_path = generation_history[index]["img_path"]
+        # Rimuovi il file immagine
+        if os.path.exists(img_path):
+            os.remove(img_path)
+        # Rimuovi dalla lista
+        del generation_history[index]
+        save_history(generation_history)
+    return get_history_gallery(), -1  # aggiorna galleria e resetta selezione
 
-generation_history = load_history()
+
 
 
 
@@ -482,6 +494,7 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         result = gr.Gallery(label="Result", show_label=False, format="webp", height=600)
         history_gallery = gr.Gallery(label="History", show_label=True, height=300)
         selected_index = gr.Number(visible=False)
+        delete_button = gr.Button("Delete selected image", variant="stop")
     with gr.Accordion("Advanced options", open=False):
         with gr.Group():
             with gr.Row(visible=True):
@@ -660,11 +673,16 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         outputs=selected_index
     )
 
-
     selected_index.change(
         fn=repopulate_fields,
         inputs=selected_index,
         outputs=[prompt, negative_prompt, style_selection, seed, height, width]
+    )
+    
+    delete_button.click(
+        fn=delete_history_item,
+        inputs=selected_index,
+        outputs=[history_gallery, selected_index],
     )
 
 if __name__ == "__main__":
