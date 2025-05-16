@@ -38,6 +38,10 @@ from pathlib import Path
 from app import safety_check
 from app.sana_pipeline import SanaPipeline
 
+import json
+
+
+
 MAX_SEED = np.iinfo(np.int32).max
 CACHE_EXAMPLES = torch.cuda.is_available() and os.getenv("CACHE_EXAMPLES", "1") == "1"
 MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", "4096"))
@@ -47,6 +51,41 @@ DEMO_PORT = int(os.getenv("DEMO_PORT", "15432"))
 os.environ["GRADIO_EXAMPLES_CACHE"] = "./.gradio/cache"
 COUNTER_DB = os.getenv("COUNTER_DB", ".count.db")
 ROOT_PATH = os.getenv("ROOT_PATH", None)
+HISTORY_FILE = "generation_history.json"
+HISTORY_LIMIT = 5000  # massimo numero di immagini da mantenere
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_history(history):
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history, f, indent=2)
+         # Funzione per aggiornare la galleria
+         
+def get_history_gallery():
+    return [(item["img_path"], f"{item['prompt']}") for item in generation_history[-HISTORY_LIMIT:]]
+
+# Quando cambia l’indice selezionato, ripopola i parametri
+def repopulate_fields(index: int):
+    if 0 <= index < len(generation_history):
+        item = generation_history[index]
+        return (
+            item["prompt"],
+            item["negative_prompt"],
+            item["style"],
+            item["seed"],
+            item["height"],
+            item["width"],
+        )
+    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+
+
+generation_history = load_history()
+
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -363,6 +402,22 @@ def generate(
 
     torch.cuda.empty_cache()
 
+    # Salva ogni immagine nella cronologia
+    for i, (img_path, caption) in enumerate(saved_paths):
+        generation_history.append({
+            "img_path": img_path,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt or "",
+            "style": style,
+            "seed": seed,
+            "height": height,
+            "width": width,
+        })
+
+    # Limita la dimensione della cronologia
+    generation_history[:] = generation_history[-HISTORY_LIMIT:]
+    save_history(generation_history)
+
     return (
         saved_paths,
         seed,
@@ -425,6 +480,8 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
             submit_btn="Run",
         )
         result = gr.Gallery(label="Result", show_label=False, format="webp", height=600)
+        history_gallery = gr.Gallery(label="History", show_label=True, height=300)
+        selected_index = gr.Number(visible=False)
     with gr.Accordion("Advanced options", open=False):
         with gr.Group():
             with gr.Row(visible=True):
@@ -586,9 +643,28 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         show_progress="full",
         api_name=False,
         queue=False,
+    ).then(
+        fn=get_history_gallery,
+        inputs=None,
+        outputs=history_gallery,
+        show_progress="hidden"
     )
     gr.HTML(
         value="<p style='text-align: center; font-size: 14px;'>Useful link: <a href='https://accessibility.mit.edu'>MIT Accessibility</a></p>"
+    )
+
+    # Quando clicchi un'immagine, restituisce l'indice
+    history_gallery.select(
+        fn=lambda evt: evt.index,
+        inputs=None,
+        outputs=selected_index
+    )
+
+
+    selected_index.change(
+        fn=repopulate_fields,
+        inputs=selected_index,
+        outputs=[prompt, negative_prompt, style_selection, seed, height, width]
     )
 
 if __name__ == "__main__":
