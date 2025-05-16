@@ -494,6 +494,7 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         result = gr.Gallery(label="Result", show_label=False, format="webp", height=600)
         history_gallery = gr.Gallery(label="History", show_label=True, height=300)
         selected_index = gr.Number(visible=False)
+        rerun_button = gr.Button("Rilancia selezione", variant="primary")
         delete_button = gr.Button("Delete selected image", variant="stop")
     with gr.Accordion("Advanced options", open=False):
         with gr.Group():
@@ -668,9 +669,35 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
 
     # Quando clicchi un'immagine, restituisce l'indice
     history_gallery.select(
-        fn=lambda evt: evt.index,
+        fn=lambda i: i,
         inputs=None,
         outputs=selected_index
+    )
+    
+    rerun_button.click(
+        fn=generate,
+        inputs=[
+            prompt,
+            negative_prompt,
+            style_selection,
+            use_negative_prompt,
+            num_imgs,
+            seed,
+            height,
+            width,
+            flow_dpms_guidance_scale,
+            flow_dpms_pag_guidance_scale,
+            flow_dpms_inference_steps,
+            randomize_seed,
+            reference_image,
+            image_guidance_scale,
+            inpaint_mask,
+        ],
+        outputs=[result, seed],
+    ).then(
+        fn=get_history_gallery,
+        inputs=None,
+        outputs=history_gallery
     )
 
     selected_index.change(
@@ -686,6 +713,7 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
     )
 
 if __name__ == "__main__":
+    demo.load(fn=get_history_gallery, inputs=None, outputs=history_gallery)
     demo.queue(max_size=20).launch(
         server_name="0.0.0.0", server_port=DEMO_PORT, debug=False, share=args.share, root_path=ROOT_PATH
     )
