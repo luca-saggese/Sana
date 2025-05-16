@@ -51,7 +51,7 @@ DEMO_PORT = int(os.getenv("DEMO_PORT", "15432"))
 os.environ["GRADIO_EXAMPLES_CACHE"] = "./.gradio/cache"
 COUNTER_DB = os.getenv("COUNTER_DB", ".count.db")
 ROOT_PATH = os.getenv("ROOT_PATH", None)
-HISTORY_FILE = "generation_history.json"
+HISTORY_FILE = "/app/output/generation_history.json"
 HISTORY_LIMIT = 5000  # massimo numero di immagini da mantenere
 
 def load_history():
@@ -389,7 +389,7 @@ def generate(
 
     # --- NUOVO BLOCCO: salva su disco ---
     saved_paths = []
-    tmpdir = Path(tempfile.gettempdir()) / "gradio_imgs"
+    tmpdir = "/app/output"
     tmpdir.mkdir(parents=True, exist_ok=True)
 
     for idx, img_t in enumerate(images):
