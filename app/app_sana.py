@@ -389,7 +389,7 @@ def generate(
 
     # --- NUOVO BLOCCO: salva su disco ---
     saved_paths = []
-    tmpdir = "/app/output"
+    tmpdir = Path("/app/output")
     tmpdir.mkdir(parents=True, exist_ok=True)
 
     for idx, img_t in enumerate(images):
