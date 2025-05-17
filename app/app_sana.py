@@ -340,9 +340,10 @@ def generate(
         transform = transforms.Compose([
             transforms.Resize((height, width)),
             transforms.ToTensor(),
-            transforms.Normalize([0.5]*3, [0.5]*3)  # da [0,1] a [-1,1]
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            lambda x: x.to(dtype=torch.float16)
         ])
-        reference_tensor = transform(reference_image).unsqueeze(0).to(device)
+        reference_tensor = transform(reference_image)[None].to(device)
     mask_tensor = None
     if inpaint_mask is not None:
         transform_mask = transforms.Compose([

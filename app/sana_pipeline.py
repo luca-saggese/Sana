@@ -276,31 +276,31 @@ class SanaPipeline(nn.Module):
                 # ----------- 👇 NUOVO BLOCCO: uso immagine come guida latente ------------
                 if latents is None:
                     if reference_image is not None:
-                        if reference_image.dim() == 3:
-                            reference_image = reference_image.unsqueeze(0)
+                        # if reference_image.dim() == 3:
+                        #     reference_image = reference_image.unsqueeze(0)
                         reference_image = reference_image.to(self.device).to(self.vae_dtype)
                         ref_latents = vae_encode(
                             self.config.vae.vae_type, self.vae, reference_image, True, self.device
                         )
-                        ref_latents = ref_latents * self.config.vae.scale_factor
+                        # ref_latents = ref_latents * self.config.vae.scale_factor
 
-                        #noise = torch.randn_like(ref_latents, generator=generator)
-                        noise = torch.randn(
-                            ref_latents.shape,
-                            device     = ref_latents.device,
-                            dtype      = ref_latents.dtype,
-                            generator  = generator          # OK perché torch.randn accetta generator
-                        )
-                        if inpaint_mask is not None:
-                            inpaint_mask = inpaint_mask.to(self.device).to(ref_latents.dtype)
-                            inpaint_mask = torch.nn.functional.interpolate(
-                                inpaint_mask, size=ref_latents.shape[-2:], mode="nearest"
-                            )
-                            z = noise * inpaint_mask + ref_latents * (1 - inpaint_mask)
-                        else:
-                            z = image_guidance_scale * ref_latents + (1 - image_guidance_scale) * noise
-                        # alpha = image_guidance_scale  # tra 0 e 1
-                        # z = alpha * ref_latents + (1 - alpha) * noise
+                        noise = torch.randn_like(ref_latents, generator=generator)
+                        # noise = torch.randn(
+                        #     ref_latents.shape,
+                        #     device     = ref_latents.device,
+                        #     dtype      = ref_latents.dtype,
+                        #     generator  = generator          # OK perché torch.randn accetta generator
+                        # )
+                        # if inpaint_mask is not None:
+                        #     inpaint_mask = inpaint_mask.to(self.device).to(ref_latents.dtype)
+                        #     inpaint_mask = torch.nn.functional.interpolate(
+                        #         inpaint_mask, size=ref_latents.shape[-2:], mode="nearest"
+                        #     )
+                        #     z = noise * inpaint_mask + ref_latents * (1 - inpaint_mask)
+                        # else:
+                        #     z = image_guidance_scale * ref_latents + (1 - image_guidance_scale) * noise
+                        alpha = image_guidance_scale  # tra 0 e 1
+                        z = alpha * ref_latents + (1 - alpha) * noise
                     else:
                         z = torch.randn(
                             n,
