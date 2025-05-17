@@ -667,6 +667,7 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         outputs=history_gallery,
         show_progress="hidden"
     )
+    demo.load(fn=get_history_gallery, inputs=None, outputs=history_gallery)
     gr.HTML(
         value="<p style='text-align: center; font-size: 14px;'>Useful link: <a href='https://accessibility.mit.edu'>MIT Accessibility</a></p>"
     )
@@ -717,7 +718,6 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
     )
 
 if __name__ == "__main__":
-    demo.load(fn=get_history_gallery, inputs=None, outputs=history_gallery)
     demo.queue(max_size=20).launch(
         server_name="0.0.0.0", server_port=DEMO_PORT, debug=False, share=args.share, root_path=ROOT_PATH
     )
