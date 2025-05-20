@@ -177,7 +177,14 @@ style_list = [
         "name":"Mario Giacomelli",
         "prompt":"high contrast black and white photo of {prompt} abstract lighting, strong silhouette, surreal empty space, other figures distant expressionist style, metaphysical mood, inspired by Mario Giacomelli",
         "negative_prompt":"photorealism, colorful, digital painting, soft shadows, anime, cartoon, modern clothes, glitch, distorted, watermark "
+    },
+    {
+        "name":"Retro poster",
+        "prompt":"Create a stylized, geometric poster illustration in the style of mid-century modernism and Art Deco, featuring a {prompt}. Use a limited, muted color palette with contrasting tones like beige, navy blue, teal, black, and light brown. Incorporate abstract shapes, sharp angles, and bold lines to build the composition. The overall aesthetic should feel retro-futuristic, clean, and sophisticated, with a balanced mix of flat color blocks and minimal shading. Maintain a sense of symmetry and harmony in the layout, evoking 20th-century  propaganda posters.",
+        "negative_prompt":"Realistic style, photorealism, 3D render, overly detailed textures, bright neon colors, gradients, soft lighting, anime style, cartoonish proportions, fantasy elements, cluttered composition, messy background, distorted anatomy, low resolution, blurry, pixelated, modern UI elements, futuristic sci-fi tech, facial expression exaggeration."
     }
+    
+    
 ]
 
 styles = {k["name"]: (k["prompt"], k["negative_prompt"]) for k in style_list}
@@ -663,6 +670,7 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         outputs=history_gallery,
         show_progress="hidden"
     )
+    demo.load(fn=get_history_gallery, inputs=None, outputs=history_gallery)
     gr.HTML(
         value="<p style='text-align: center; font-size: 14px;'>Useful link: <a href='https://accessibility.mit.edu'>MIT Accessibility</a></p>"
     )
@@ -700,11 +708,11 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         outputs=history_gallery
     )
 
-    selected_index.change(
-        fn=repopulate_fields,
-        inputs=selected_index,
-        outputs=[prompt, negative_prompt, style_selection, seed, height, width]
-    )
+    # selected_index.change(
+    #     fn=repopulate_fields,
+    #     inputs=selected_index,
+    #     outputs=[prompt, negative_prompt, style_selection, seed, height, width]
+    # )
     
     delete_button.click(
         fn=delete_history_item,
@@ -713,7 +721,7 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
     )
 
 if __name__ == "__main__":
-    demo.load(fn=get_history_gallery, inputs=None, outputs=history_gallery)
+
     demo.queue(max_size=20).launch(
         server_name="0.0.0.0", server_port=DEMO_PORT, debug=False, share=args.share, root_path=ROOT_PATH
     )
