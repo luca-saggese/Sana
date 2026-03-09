@@ -9,9 +9,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-RUN curl https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o ~/miniconda.sh \
-    && sh ~/miniconda.sh -b -p /opt/conda \
-    && rm ~/miniconda.sh
+
 
 COPY pyproject.toml pyproject.toml
 COPY diffusion diffusion
@@ -50,3 +48,8 @@ EXPOSE 8080
 
 #CMD ["python", "-u", "-W", "ignore", "app/app_sana.py", "--share", "--config=configs/sana_config/1024ms/Sana_1600M_img1024.yaml", "--model_path=hf://Efficient-Large-Model/Sana_1600M_1024px/checkpoints/Sana_1600M_1024px.pth"]
 #python -u -W ignore app/app_sana.py --share --config=configs/sana_config/1024ms/Sana_1600M_img1024.yaml --model_path=hf://Efficient-Large-Model/Sana_1600M_1024px/checkpoints/Sana_1600M_1024px.pth
+
+
+# python -u -W ignore app/app_sana.py --share --config=configs/sana1-5_config/1024ms/Sana_1600M_1024px_allqknorm_bf16_lr2e5.yaml --model_path=hf://frutiemax/twistedreality-sana-1.5-1600M-1024px/diffusion_pytorch_model.safetensors
+# python -u -W ignore app/app_sana.py --share --config=configs/sana1-5_config/1024ms/Sana_1600M_1024px_allqknorm_bf16_lr2e5.yaml --model_path=hf://AI-Art-Collab/sana-1.6-v10/sana-1.6-v10.pth
+

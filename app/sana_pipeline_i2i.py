@@ -15,12 +15,20 @@
 # SPDX-License-Identifier: Apache-2.0
 import argparse
 import warnings
+import os
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 import pyrallis
 import torch
 import torch.nn as nn
+import gc
+
+# Ottimizzazioni memoria CUDA
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
+torch.backends.cuda.max_memory_split_size = 128 * 1024 * 1024  # 128 MB
+torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = False
 
 warnings.filterwarnings("ignore")  # ignore warning
 
@@ -32,7 +40,7 @@ from diffusion.data.datasets.utils import (
     ASPECT_RATIO_2048_TEST,
     ASPECT_RATIO_4096_TEST,
 )
-from diffusion.model.builder import build_model, get_tokenizer_and_text_encoder, get_vae, vae_decode
+from diffusion.model.builder import build_model, get_tokenizer_and_text_encoder, get_vae, vae_decode, vae_encode
 from diffusion.model.utils import get_weight_dtype, prepare_prompt_ar, resize_and_crop_tensor
 from diffusion.utils.config import SanaConfig, model_init_config
 from diffusion.utils.logger import get_root_logger
@@ -84,6 +92,12 @@ class SanaPipeline(nn.Module):
         config: Optional[str] = "configs/sana_config/1024ms/Sana_1600M_img1024.yaml",
     ):
         super().__init__()
+        
+        def print_gpu_memory(msg):
+            if torch.cuda.is_available():
+                print(f"[MEMORY] {msg}: {torch.cuda.memory_allocated()/1024**3:.2f}GB / {torch.cuda.get_device_properties(0).total_memory/1024**3:.2f}GB")
+        
+        print_gpu_memory("Initial")
         config = pyrallis.load(SanaInference, open(config))
         self.args = self.config = config
 
@@ -110,31 +124,85 @@ class SanaPipeline(nn.Module):
         self.guidance_type = guidance_type_select(guidance_type, self.args.pag_scale, config.model.attn_type)
         logger.info(f"Inference with {self.weight_dtype}, PAG guidance layer: {self.config.model.pag_applied_layers}")
 
-        # 1. build vae and text encoder
+        # 1. build vae
+        print_gpu_memory("Before VAE")
         self.vae = self.build_vae(config.vae)
-        self.tokenizer, self.text_encoder = self.build_text_encoder(config.text_encoder)
-
+        print_gpu_memory("After VAE")
+        
         # 2. build Sana model
+        print_gpu_memory("Before Sana Model")
         self.model = self.build_sana_model(config).to(self.device)
+        print_gpu_memory("After Sana Model")
 
-        # 3. pre-compute null embedding
-        with torch.no_grad():
-            null_caption_token = self.tokenizer(
-                "", max_length=self.max_sequence_length, padding="max_length", truncation=True, return_tensors="pt"
-            ).to(self.device)
-            self.null_caption_embs = self.text_encoder(null_caption_token.input_ids, null_caption_token.attention_mask)[
-                0
-            ]
+        # 3. Initialize scheduler
+        print_gpu_memory("Before Scheduler")
+        if self.vis_sampler == "flow_dpm-solver":
+            self.scheduler = DPMS(
+                self.model,
+                model_type="flow",
+                schedule="FLOW",
+            )
+            self.scheduler.register_progress_bar(self.progress_fn)
+        else:
+            raise NotImplementedError("Image-to-image attualmente supportato solo per flow_dpm-solver")
+        print_gpu_memory("After Scheduler")
+
+        # Store config for later use
+        self.text_encoder_config = config.text_encoder
+        self.tokenizer = None
+        self.text_encoder = None
+        self.null_caption_embs = None
+
+    def ensure_text_encoder_loaded(self):
+        """Ensure text encoder is loaded, loading it if necessary"""
+        if self.text_encoder is None:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
+            print("[MEMORY] Loading text encoder...")
+            self.tokenizer, self.text_encoder = self.build_text_encoder(self.text_encoder_config)
+            
+            # Pre-compute null embedding
+            with torch.no_grad():
+                null_caption_token = self.tokenizer(
+                    "", max_length=self.max_sequence_length, padding="max_length", truncation=True, return_tensors="pt"
+                ).to(self.device)
+                self.null_caption_embs = self.text_encoder(null_caption_token.input_ids, null_caption_token.attention_mask)[0]
+                del null_caption_token
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+    def unload_text_encoder(self):
+        """Unload text encoder to free memory"""
+        if self.text_encoder is not None:
+            print("[MEMORY] Unloading text encoder...")
+            del self.text_encoder
+            self.text_encoder = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
 
     def build_vae(self, config):
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
         vae = get_vae(config.vae_type, config.vae_pretrained, self.device).to(self.vae_dtype)
+        vae.eval()  # Set to evaluation mode
         return vae
 
     def build_text_encoder(self, config):
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
         tokenizer, text_encoder = get_tokenizer_and_text_encoder(name=config.text_encoder_name, device=self.device)
+        text_encoder.eval()  # Set to evaluation mode
         return tokenizer, text_encoder
 
     def build_sana_model(self, config):
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
+            
         # model setting
         model_kwargs = model_init_config(config, latent_size=self.latent_size)
         model = build_model(
@@ -142,6 +210,8 @@ class SanaPipeline(nn.Module):
             use_fp32_attention=config.model.get("fp32_attention", False) and config.model.mixed_precision != "bf16",
             **model_kwargs,
         )
+        model.eval()  # Set to evaluation mode
+        
         self.logger.info(f"use_fp32_attention: {model.fp32_attention}")
         self.logger.info(
             f"{model.__class__.__name__}:{config.model.model},"
@@ -181,128 +251,238 @@ class SanaPipeline(nn.Module):
         latents=None,
         use_resolution_binning=True,
     ):
+        # Clear CUDA cache before starting
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
+
         self.ori_height, self.ori_width = height, width
         if use_resolution_binning:
             self.height, self.width = classify_height_width_bin(height, width, ratios=self.base_ratios)
         else:
             self.height, self.width = height, width
-        self.latent_size_h, self.latent_size_w = (
-            self.height // self.config.vae.vae_downsample_rate,
-            self.width // self.config.vae.vae_downsample_rate,
-        )
-        self.guidance_type = guidance_type_select(self.guidance_type, pag_guidance_scale, self.config.model.attn_type)
 
-        if negative_prompt != "":
-            null_caption_token = self.tokenizer(
-                negative_prompt,
-                max_length=self.max_sequence_length,
-                padding="max_length",
-                truncation=True,
-                return_tensors="pt",
-            ).to(self.device)
-            self.null_caption_embs = self.text_encoder(null_caption_token.input_ids, null_caption_token.attention_mask)[0]
+        # Process batch
+        batch_size = 1
+        if isinstance(prompt, str):
+            prompt = [prompt]
+        if isinstance(negative_prompt, str):
+            negative_prompt = [negative_prompt]
 
-        if prompt is None:
-            prompt = [""]
-        prompts = prompt if isinstance(prompt, list) else [prompt]
-        samples = []
-
-        for prompt in prompts:
-            prompts, hw, ar = (
-                [],
-                torch.tensor([[self.image_size, self.image_size]], dtype=torch.float, device=self.device).repeat(
-                    num_images_per_prompt, 1
-                ),
-                torch.tensor([[1.0]], device=self.device).repeat(num_images_per_prompt, 1),
+        # Process the image in smaller batches
+        max_batch_size = 4  # Ridotto il batch size massimo
+        results = []
+        
+        for i in range(0, num_images_per_prompt, max_batch_size):
+            current_batch_size = min(max_batch_size, num_images_per_prompt - i)
+            
+            # Process text embeddings for current batch
+            text_embeddings = self.encode_prompt(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                batch_size=current_batch_size,
             )
 
-            for _ in range(num_images_per_prompt):
-                prompts.append(prepare_prompt_ar(prompt, self.base_ratios, device=self.device, show=False)[0].strip())
+            # Prepare latents
+            latents_shape = (current_batch_size, self.vae.config.latent_channels, self.height // 8, self.width // 8)
+            
+            if latents is None:
+                latents = torch.randn(
+                    latents_shape,
+                    generator=generator,
+                    device=self.device,
+                    dtype=self.vae_dtype,
+                )
+            else:
+                latents = latents.to(device=self.device, dtype=self.vae_dtype)
 
+            # Process input image if provided
+            if input_image is not None:
+                # Clear memory before processing
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                
+                # Process in smaller chunks if batch size is large
+                chunk_size = 2  # Process 2 images at a time
+                all_latents = []
+                
+                for j in range(0, current_batch_size, chunk_size):
+                    chunk_batch_size = min(chunk_size, current_batch_size - j)
+                    
+                    # Encode image chunk
+                    init_latents_chunk = self.encode_image(input_image[j:j+chunk_batch_size], chunk_batch_size)
+                    init_latents_chunk = init_latents_chunk.to(device=self.device, dtype=self.vae_dtype)
+                    
+                    # Generate noise for chunk
+                    noise_chunk = torch.randn(
+                        init_latents_chunk.shape,
+                        generator=generator,
+                        device=self.device,
+                        dtype=self.vae_dtype
+                    )
+                    
+                    # Add noise to chunk
+                    noised_chunk = self.scheduler.add_noise2(
+                        init_latents_chunk,
+                        noise_chunk,
+                        torch.tensor([0.0]).to(self.device)
+                    )
+                    
+                    all_latents.append(noised_chunk)
+                    
+                    # Clean up chunk memory
+                    del init_latents_chunk, noise_chunk
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                
+                # Combine chunks
+                latents = torch.cat(all_latents, dim=0)
+                del all_latents
+                
+                print(f"[DEBUG] z dopo add_noise: shape={latents.shape}, type={type(latents)}")
+                
+                # Final cleanup
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    gc.collect()
+
+            # Scale the latents
+            latents = latents * self.scheduler.edm_sigma(torch.tensor([0.0]).to(self.device))
+            print(f"[DEBUG] z.shape: {latents.shape}, type: {type(latents)}")
+
+            # Set timesteps
+            self.scheduler.set_timesteps(num_inference_steps)
+            timesteps = self.scheduler.timesteps
+
+            # Denoising loop
+            for t in timesteps:
+                # Free up memory
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    gc.collect()
+
+                latent_model_input = torch.cat([latents] * 2)
+                t_input = torch.cat([t] * 2)
+
+                # Predict the noise residual
+                with torch.no_grad():
+                    noise_pred = self.unet(
+                        sample=latent_model_input,
+                        timestep=t_input,
+                        encoder_hidden_states=text_embeddings,
+                    )
+
+                # Perform guidance
+                noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                # Compute the previous noisy sample
+                latents = self.scheduler.step(noise_pred, t, latents).prev_sample
+
+            # Decode latents
+            latents = 1 / 0.18215 * latents
             with torch.no_grad():
-                if not self.config.text_encoder.chi_prompt:
-                    max_length_all = self.config.text_encoder.model_max_length
-                    prompts_all = prompts
-                else:
-                    chi_prompt = "\n".join(self.config.text_encoder.chi_prompt)
-                    prompts_all = [chi_prompt + prompt for prompt in prompts]
-                    num_chi_prompt_tokens = len(self.tokenizer.encode(chi_prompt))
-                    max_length_all = (
-                        num_chi_prompt_tokens + self.config.text_encoder.model_max_length - 2
-                    )
+                images = self.vae.decode(latents).sample
 
-                caption_token = self.tokenizer(
-                    prompts_all,
-                    max_length=max_length_all,
-                    padding="max_length",
-                    truncation=True,
-                    return_tensors="pt",
-                ).to(device=self.device)
-                select_index = [0] + list(range(-self.config.text_encoder.model_max_length + 1, 0))
-                caption_embs = self.text_encoder(caption_token.input_ids, caption_token.attention_mask)[0][:, None][
-                    :, :, select_index
-                ].to(self.weight_dtype)
-                emb_masks = caption_token.attention_mask[:, select_index]
-                null_y = self.null_caption_embs.repeat(len(prompts), 1, 1)[:, None].to(self.weight_dtype)
+            results.extend(images.cpu())
 
-                model_kwargs = dict(data_info={"img_hw": hw, "aspect_ratio": ar}, mask=emb_masks)
+            # Free memory after each batch
+            del text_embeddings, latents, noise_pred
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
 
-                if self.vis_sampler == "flow_dpm-solver":
-                    scheduler = DPMS(
-                        self.model,
-                        condition=caption_embs,
-                        uncondition=null_y,
-                        guidance_type=self.guidance_type,
-                        cfg_scale=guidance_scale,
-                        pag_scale=pag_guidance_scale,
-                        pag_applied_layers=self.config.model.pag_applied_layers,
-                        model_type="flow",
-                        model_kwargs=model_kwargs,
-                        schedule="FLOW",
-                    )
-                    scheduler.register_progress_bar(self.progress_fn)
+        return torch.stack(results)
 
-                    if input_image is not None:
-                        input_image = input_image.to(self.device).to(self.vae_dtype)
-                        z_0 = self.vae.encode(input_image).latent_dist.sample()
-                        z_0 = z_0.to(self.weight_dtype)
+    def encode_image(self, image, batch_size=1):
+        """Encode the input image to latent space"""
+        if image.dim() == 3:
+            image = image.unsqueeze(0)
+        
+        image = image.to(self.device).to(self.vae_dtype)
+        latents = vae_encode(
+            self.config.vae.vae_type,
+            self.vae,
+            image,
+            True,
+            self.device
+        )
+        return latents.to(self.weight_dtype)
 
-                        t_index = int(strength * num_inference_steps)
-                        noise = torch.randn_like(z_0)
-                        t = torch.tensor([t_index], device=self.device, dtype=torch.long)
-                        z = scheduler.add_noise(z_0, noise, t)
-                    elif latents is not None:
-                        z = latents.to(self.device)
-                    else:
-                        z = torch.randn(
-                            len(prompts),
-                            self.config.vae.vae_latent_dim,
-                            self.latent_size_h,
-                            self.latent_size_w,
-                            generator=generator,
-                            device=self.device,
-                        )
+    def encode_prompt(self, prompt, negative_prompt="", batch_size=1):
+        """Encode the prompt to text embeddings"""
+        # Ensure text encoder is loaded
+        self.ensure_text_encoder_loaded()
+        
+        if isinstance(prompt, str):
+            prompt = [prompt]
+        if isinstance(negative_prompt, str):
+            negative_prompt = [negative_prompt]
 
-                    sample = scheduler.sample(
-                        z,
-                        steps=num_inference_steps,
-                        order=2,
-                        skip_type="time_uniform_flow",
-                        method="multistep",
-                        flow_shift=self.flow_shift,
-                    )
-                else:
-                    raise NotImplementedError("Image-to-image attualmente supportato solo per flow_dpm-solver")
+        # Handle Chinese prompts if configured
+        if self.text_encoder_config.chi_prompt:
+            chi_prompt = "\n".join(self.text_encoder_config.chi_prompt)
+            prompts = [chi_prompt + p for p in prompt]
+            num_chi_prompt_tokens = len(self.tokenizer.encode(chi_prompt))
+            max_length = num_chi_prompt_tokens + self.text_encoder_config.model_max_length - 2
+        else:
+            prompts = prompt
+            max_length = self.text_encoder_config.model_max_length
 
-            sample = sample.to(self.vae_dtype)
-            with torch.no_grad():
-                sample = vae_decode(self.config.vae.vae_type, self.vae, sample)
+        # Tokenize prompts
+        text_tokens = self.tokenizer(
+            prompts,
+            max_length=max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt"
+        ).to(self.device)
 
-            if use_resolution_binning:
-                sample = resize_and_crop_tensor(sample, self.ori_width, self.ori_height)
-            samples.append(sample)
+        # Select proper token indices
+        select_index = [0] + list(range(-self.text_encoder_config.model_max_length + 1, 0))
+        
+        # Get text embeddings
+        text_embeddings = self.text_encoder(
+            text_tokens.input_ids,
+            text_tokens.attention_mask
+        )[0][:, None][:, :, select_index].to(self.weight_dtype)
+        
+        # Get embedding masks
+        embedding_masks = text_tokens.attention_mask[:, select_index]
 
-            return sample
+        # Handle negative prompts
+        if negative_prompt:
+            uncond_tokens = self.tokenizer(
+                negative_prompt,
+                max_length=max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            ).to(self.device)
+            
+            uncond_embeddings = self.text_encoder(
+                uncond_tokens.input_ids,
+                uncond_tokens.attention_mask
+            )[0][:, None][:, :, select_index].to(self.weight_dtype)
+        else:
+            uncond_embeddings = self.null_caption_embs.repeat(len(prompts), 1, 1)[:, None].to(self.weight_dtype)
 
-        return samples
+        # Duplicate for batch size
+        text_embeddings = text_embeddings.repeat(batch_size, 1, 1, 1)
+        uncond_embeddings = uncond_embeddings.repeat(batch_size, 1, 1, 1)
+
+        # Concatenate for classifier-free guidance
+        text_embeddings = torch.cat([uncond_embeddings, text_embeddings])
+
+        # Clean up
+        del text_tokens
+        if negative_prompt:
+            del uncond_tokens
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
+
+        return text_embeddings
 
