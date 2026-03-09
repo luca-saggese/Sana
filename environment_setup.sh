@@ -20,10 +20,6 @@ fi
 # update pip to latest version for pyproject.toml setup.
 pip install -U pip
 
-# Ensure PyTorch is compiled with CUDA support (critical for triton kernels)
-echo "Installing PyTorch with CUDA support..."
-pip install --upgrade "torch>=2.5.0" --index-url https://download.pytorch.org/whl/cu121
-
 # ensure build tooling required by mmcv setup.py (pkg_resources)
 pip install -U "setuptools<81" wheel
 
