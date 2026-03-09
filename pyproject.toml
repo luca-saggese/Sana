@@ -20,7 +20,7 @@ dependencies = [
     "came-pytorch",
     "einops",
     "ftfy",
-    "diffusers==0.30.3",
+    "diffusers>=0.37.0",
     "clip@git+https://github.com/openai/CLIP.git",
     "gradio",
     "image-reward",
