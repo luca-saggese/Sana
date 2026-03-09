@@ -3,7 +3,7 @@ FROM nvcr.io/nvidia/pytorch:24.12-py3
 ENV PATH=/opt/conda/bin:$PATH
 
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
