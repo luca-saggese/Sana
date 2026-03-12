@@ -36,7 +36,7 @@ import tempfile, uuid, os
 from pathlib import Path
 
 from app import safety_check
-from app.sana_pipeline import SanaPipeline
+from app.sana_pipeline_i2i import SanaPipeline
 
 import json
 
@@ -177,14 +177,7 @@ style_list = [
         "name":"Mario Giacomelli",
         "prompt":"high contrast black and white photo of {prompt} abstract lighting, strong silhouette, surreal empty space, other figures distant expressionist style, metaphysical mood, inspired by Mario Giacomelli",
         "negative_prompt":"photorealism, colorful, digital painting, soft shadows, anime, cartoon, modern clothes, glitch, distorted, watermark "
-    },
-    {
-        "name":"Retro poster",
-        "prompt":"Create a stylized, geometric poster illustration in the style of mid-century modernism and Art Deco, featuring a {prompt}. Use a limited, muted color palette with contrasting tones like beige, navy blue, teal, black, and light brown. Incorporate abstract shapes, sharp angles, and bold lines to build the composition. The overall aesthetic should feel retro-futuristic, clean, and sophisticated, with a balanced mix of flat color blocks and minimal shading. Maintain a sense of symmetry and harmony in the layout, evoking 20th-century  propaganda posters.",
-        "negative_prompt":"Realistic style, photorealism, 3D render, overly detailed textures, bright neon colors, gradients, soft lighting, anime style, cartoonish proportions, fantasy elements, cluttered composition, messy background, distorted anatomy, low resolution, blurry, pixelated, modern UI elements, futuristic sci-fi tech, facial expression exaggeration."
     }
-    
-    
 ]
 
 styles = {k["name"]: (k["prompt"], k["negative_prompt"]) for k in style_list}
@@ -337,6 +330,9 @@ def generate(
     image_guidance_scale: float = 1.0,    # 👈 Aggiunto
     inpaint_mask: Image.Image = None,
 ):
+    
+ 
+
     write_inference_count(num_imgs)
     global INFER_SPEED
     # seed = 823753551
@@ -387,10 +383,11 @@ def generate(
         num_inference_steps=num_inference_steps,
         num_images_per_prompt=num_imgs,
         generator=generator,
-        reference_image=reference_tensor,               # 👈 aggiunto
-        image_guidance_scale=image_guidance_scale,     # 👈 aggiunto
-        inpaint_mask=mask_tensor,                      # 👈 aggiunto
+        input_image=reference_tensor,               # 👈 aggiunto
+        strength=image_guidance_scale,     # 👈 aggiunto
+       # inpaint_mask=mask_tensor,                      # 👈 aggiunto
     )
+
 
     pipe.progress_fn(1.0, desc="Sana End")
     INFER_SPEED = (time.time() - time_start) / num_imgs
@@ -709,11 +706,11 @@ with gr.Blocks(css=css, title="Sana", delete_cache=(86400, 86400)) as demo:
         outputs=history_gallery
     )
 
-    # selected_index.change(
-    #     fn=repopulate_fields,
-    #     inputs=selected_index,
-    #     outputs=[prompt, negative_prompt, style_selection, seed, height, width]
-    # )
+    selected_index.change(
+        fn=repopulate_fields,
+        inputs=selected_index,
+        outputs=[prompt, negative_prompt, style_selection, seed, height, width]
+    )
     
     delete_button.click(
         fn=delete_history_item,

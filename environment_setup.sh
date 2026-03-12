@@ -20,8 +20,11 @@ fi
 # update pip to latest version for pyproject.toml setup.
 pip install -U pip
 
-# for fast attn
-pip install -U xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
+# ensure build tooling required by mmcv setup.py (pkg_resources)
+pip install -U "setuptools<81" wheel
+
+# mmcv 1.7.2 may fail in isolated PEP517 build env due to missing pkg_resources
+pip install --no-build-isolation "mmcv==1.7.2"
 
 # install sana
 pip install -e .

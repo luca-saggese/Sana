@@ -137,6 +137,7 @@ class SanaPipeline(nn.Module):
     def build_sana_model(self, config):
         # model setting
         model_kwargs = model_init_config(config, latent_size=self.latent_size)
+        self.model_kwargs = model_kwargs
         model = build_model(
             config.model.model,
             use_fp32_attention=config.model.get("fp32_attention", False) and config.model.mixed_precision != "bf16",
@@ -276,29 +277,55 @@ class SanaPipeline(nn.Module):
                 # ----------- 👇 NUOVO BLOCCO: uso immagine come guida latente ------------
                 if latents is None:
                     if reference_image is not None:
-                        if reference_image.dim() == 3:
-                            reference_image = reference_image.unsqueeze(0)
+                        # if reference_image.dim() == 3:
+                        #     reference_image = reference_image.unsqueeze(0)
                         reference_image = reference_image.to(self.device).to(self.vae_dtype)
                         ref_latents = vae_encode(
                             self.config.vae.vae_type, self.vae, reference_image, True, self.device
                         )
-                        ref_latents = ref_latents * self.config.vae.scale_factor
+                        # ref_latents = ref_latents * self.config.vae.scale_factor
 
-                        #noise = torch.randn_like(ref_latents, generator=generator)
                         noise = torch.randn(
                             ref_latents.shape,
                             device     = ref_latents.device,
                             dtype      = ref_latents.dtype,
                             generator  = generator          # OK perché torch.randn accetta generator
                         )
-                        if inpaint_mask is not None:
-                            inpaint_mask = inpaint_mask.to(self.device).to(ref_latents.dtype)
-                            inpaint_mask = torch.nn.functional.interpolate(
-                                inpaint_mask, size=ref_latents.shape[-2:], mode="nearest"
-                            )
-                            z = noise * inpaint_mask + ref_latents * (1 - inpaint_mask)
-                        else:
-                            z = image_guidance_scale * ref_latents + (1 - image_guidance_scale) * noise
+
+                        model_kwargs = dict(data_info={"img_hw": hw, "aspect_ratio": ar}, mask=emb_masks)
+                        scheduler = DPMS(
+                            self.model,
+                            condition=caption_embs,
+                            uncondition=null_y,
+                            guidance_type=self.guidance_type,
+                            cfg_scale=guidance_scale,
+                            pag_scale=pag_guidance_scale,
+                            pag_applied_layers=self.config.model.pag_applied_layers,
+                            model_type="flow",
+                            model_kwargs=model_kwargs,
+                            schedule="FLOW",
+                        )
+                        # scegli quanto distruggere il ref: 0 = identico, 1 = puro noise
+                        strength = 0.35               # 0 → copia perfetta, 1 → puro noise
+                        t = torch.tensor([strength], device=ref_latents.device, dtype=ref_latents.dtype)
+
+                        # lascia che lo scheduler faccia il lavoro
+                        z = scheduler.add_noise(ref_latents, t, noise) 
+
+                        # noise = torch.randn(
+                        #     ref_latents.shape,
+                        #     device     = ref_latents.device,
+                        #     dtype      = ref_latents.dtype,
+                        #     generator  = generator          # OK perché torch.randn accetta generator
+                        # )
+                        # if inpaint_mask is not None:
+                        #     inpaint_mask = inpaint_mask.to(self.device).to(ref_latents.dtype)
+                        #     inpaint_mask = torch.nn.functional.interpolate(
+                        #         inpaint_mask, size=ref_latents.shape[-2:], mode="nearest"
+                        #     )
+                        #     z = noise * inpaint_mask + ref_latents * (1 - inpaint_mask)
+                        # else:
+                        #     z = image_guidance_scale * ref_latents + (1 - image_guidance_scale) * noise
                         # alpha = image_guidance_scale  # tra 0 e 1
                         # z = alpha * ref_latents + (1 - alpha) * noise
                     else:

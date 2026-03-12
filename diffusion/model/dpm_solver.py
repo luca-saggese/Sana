@@ -395,6 +395,29 @@ def model_wrapper(
         elif model_type == "score":
             sigma_t = noise_schedule.marginal_std(t_continuous)
             return -expand_dims(sigma_t, x.dim()) * output
+        elif model_type == "velocity_sana":
+            # Coeff. usati da SANA per x0 da v (con shift)
+            # noise_schedule qui è quello passato a model_wrapper, che è quello di DPMS
+            # quindi marginal_std(t_continuous) è t_continuous
+            sigma_orig = noise_schedule.marginal_std(t_continuous) # è t_continuous
+            
+            # Recupera flow_shift. Potrebbe essere necessario passarlo a model_kwargs.
+            # Assumiamo che sia in model_kwargs['flow_shift']
+            current_flow_shift = model_kwargs.get("flow_shift", 1.0) # Default a 1 se non specificato
+            
+            # õ_t (sigma_t_effective per la formula x0 = xt - õ_t * v)
+            sigma_t_eff = (current_flow_shift * sigma_orig) / (1 + (current_flow_shift - 1) * sigma_orig)
+            sigma_t_eff = torch.max(sigma_t_eff, torch.tensor(1e-8, device=sigma_t_eff.device)) # Evita divisione per zero
+
+            x0_pred = x - expand_dims(sigma_t_eff, x.dim()) * velocity_pred
+
+            # Coeff. standard che DPM_Solver.data_prediction_fn userà per convertire epsilon in x0
+            alpha_t_std = noise_schedule.marginal_alpha(t_continuous) # 1 - t_continuous
+            sigma_t_std = noise_schedule.marginal_std(t_continuous)   # t_continuous
+            sigma_t_std = torch.max(sigma_t_std, torch.tensor(1e-8, device=sigma_t_std.device))
+
+            epsilon_equivalent = (x - expand_dims(alpha_t_std, x.dim()) * x0_pred) / expand_dims(sigma_t_std, x.dim())
+            return epsilon_equivalent
         elif model_type == "flow":
             _, sigma_t = noise_schedule.marginal_alpha(t_continuous), noise_schedule.marginal_std(t_continuous)
             try:
@@ -1325,6 +1348,35 @@ class DPM_Solver:
             return xt.squeeze(0)
         else:
             return xt
+        
+    def add_noise2(self, x, t, noise=None):
+        """
+        Compute the noised input xt = alpha_t * x + sigma_t * noise.
+
+        Args:
+            x: A `torch.Tensor` with shape `(batch_size, *shape)`.
+            t: A `torch.Tensor` with shape `(t_size,)`.
+
+        Returns:
+            xt with shape `(batch_size, *shape)`.
+        """
+        alpha_t = self.noise_schedule.marginal_alpha(t)
+        sigma_t = self.noise_schedule.marginal_std(t)
+
+        if noise is None:
+            noise = torch.randn_like(x)
+
+        # Reshape alpha_t e sigma_t per il broadcasting corretto
+        view_shape = [1] * len(x.shape)  # [1, 1, 1, 1] per un tensore 4D
+        view_shape[0] = -1  # [-1, 1, 1, 1] per permettere il batch
+        
+        alpha_t = alpha_t.reshape(*view_shape)
+        sigma_t = sigma_t.reshape(*view_shape)
+        
+        xt = alpha_t * x + sigma_t * noise
+        return xt
+
+    
 
     def inverse(
         self,

@@ -7,7 +7,7 @@ name = "sana"
 version = "0.0.1"
 description = "SANA"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
@@ -20,7 +20,8 @@ dependencies = [
     "came-pytorch",
     "einops",
     "ftfy",
-    "diffusers@git+https://github.com/huggingface/diffusers",
+    "numpy<2",
+    "diffusers>=0.37.0",
     "clip@git+https://github.com/openai/CLIP.git",
     "gradio",
     "image-reward",
@@ -38,13 +39,9 @@ dependencies = [
     "tensorboard",
     "tensorboardX",
     "timm",
-    "torchaudio==2.4.0",
-    "torchvision==0.19",
     "transformers",
-    "triton==3.0.0",
     "wandb",
     "webdataset",
-    "xformers==0.0.27.post2",
     "yapf",
     "spaces",
     "matplotlib",
@@ -61,9 +58,6 @@ sana-upload = "sana.cli.upload2hf:main"
 [project.optional-dependencies]
 
 [project.urls]
-
-[tool.pip]
-extra-index-url = ["https://download.pytorch.org/whl/cu121"]
 
 [tool.black]
 line-length = 120
