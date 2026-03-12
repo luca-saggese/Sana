@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/pytorch:24.12-py3
+FROM nvcr.io/nvidia/pytorch:25.10-py3
 
 ENV PATH=/opt/conda/bin:$PATH
 
