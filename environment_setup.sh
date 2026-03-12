@@ -23,14 +23,6 @@ pip install -U pip
 # ensure build tooling required by mmcv setup.py (pkg_resources)
 pip install -U "setuptools<81" wheel
 
-# for fast attn
-ARCH=$(uname -m)
-if [ "$ARCH" = "x86_64" ]; then
-    pip install -U xformers==0.0.29.post1 --index-url https://download.pytorch.org/whl/cu121
-elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-    echo "xformers wheel non disponibile su Linux ${ARCH}; uso dipendenze compatibili definite in pyproject.toml."
-fi
-
 # mmcv 1.7.2 may fail in isolated PEP517 build env due to missing pkg_resources
 pip install --no-build-isolation "mmcv==1.7.2"
 
